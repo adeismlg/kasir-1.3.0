@@ -12,6 +12,9 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Spatie\Permission\Traits\HasRoles;
+use Illuminate\Support\Facades\Auth;
+
 
 class PaymentMethodResource extends Resource
 {
@@ -23,17 +26,23 @@ class PaymentMethodResource extends Resource
 
     protected static ?string $navigationGroup = 'Others';
 
-    public static function query(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
-        $user = filament()->auth()->user();
+        $query = parent::getEloquentQuery();
+        $user = Auth::user();
 
-        if ($user && $user->role === 'owner') {
-            return $query->where('store_id', $user->store_id);
+        if (!$user) {
+            return $query->whereNull('id'); // Jika tidak ada user, jangan tampilkan data
+        }
+
+        if ($user->role === 'owner') {
+            // Pastikan $user->store_id sudah terisi dan sesuai dengan tipe yang di tabel Payment Methods
+            return $query->where('store_id', '=', $user->store_id);
         }
 
         return $query;
     }
-
+    
     public static function form(Form $form): Form
     {
         return $form
@@ -45,6 +54,9 @@ class PaymentMethodResource extends Resource
                     ->image(),
                 Forms\Components\Toggle::make('is_cash')
                     ->required(),
+                Forms\Components\Hidden::make('store_id') // Store ID otomatis sesuai toko owner
+                ->default(fn () => \Illuminate\Support\Facades\Auth::user()?->store_id)
+                ->required(),
             ]);
     }
 
@@ -81,6 +93,7 @@ class PaymentMethodResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+            
     }
 
     public static function getRelations(): array
@@ -98,4 +111,7 @@ class PaymentMethodResource extends Resource
             'edit' => Pages\EditPaymentMethod::route('/{record}/edit'),
         ];
     }
+
+    
+    
 }

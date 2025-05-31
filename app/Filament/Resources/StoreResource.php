@@ -26,14 +26,14 @@ class StoreResource extends Resource
     {
         $user = Filament::auth()->user();
 
-        return $user && $user->role === 'admin';
+        return $user && (in_array($user->role, ['admin']));
     }
 
     public static function query(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
     {
-        $user = filament()->auth()->user();
+        $user = Filament::auth()->user();
 
-        if ($user->role === 'owner') {
+        if ($user && $user->role === 'owner') {
             return $query->where('id', $user->store_id);
         }
 

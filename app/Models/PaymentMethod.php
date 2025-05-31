@@ -13,6 +13,7 @@ class PaymentMethod extends Model
     protected $fillable = [
         'name',
         'image',
+        'store_id',
         'is_cash',
     ];
 

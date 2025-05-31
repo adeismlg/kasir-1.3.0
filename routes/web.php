@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Exports\TemplateExport;
+use Maatwebsite\Excel\Facades\Excel;
 
 
 Route::get('/', function () {

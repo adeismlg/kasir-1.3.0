@@ -12,6 +12,8 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Filament\Facades\Filament;
+use Illuminate\Support\Facades\Auth;
 
 class SettingResource extends Resource
 {
@@ -22,6 +24,29 @@ class SettingResource extends Resource
 
     protected static ?int $navigationSort = 102;
 
+    public static function canAccess(): bool
+    {
+        $user = Filament::auth()->user();
+
+        return $user && $user->role === 'owner'; // Hanya owner yang bisa mengakses Setting
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery();
+        $user = Auth::user();
+
+        if (!$user) {
+            return $query->whereNull('id'); // Jika tidak ada user, pastikan tidak ada data ditampilkan
+        }
+
+        if ($user->role === 'owner') {
+            return $query->where('store_id', '=', $user->store_id);
+        }
+
+        return $query;
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -29,13 +54,19 @@ class SettingResource extends Resource
                 Forms\Components\TextInput::make('shop')
                     ->required()
                     ->maxLength(255),
+
                 Forms\Components\TextInput::make('address')
                     ->required()
                     ->maxLength(255),
+
                 Forms\Components\TextInput::make('phone')
                     ->tel()
                     ->required()
                     ->maxLength(255),
+
+                Forms\Components\Hidden::make('store_id') // Store ID otomatis sesuai toko owner
+                    ->default(fn () => \Illuminate\Support\Facades\Auth::user()?->store_id)
+                    ->required(),
             ]);
     }
 
@@ -82,7 +113,7 @@ class SettingResource extends Resource
     {
         return [
             'index' => Pages\ListSettings::route('/'),
-            'create' => Pages\CreateSetting::route('/create'),
+            // 'create' => Pages\CreateSetting::route('/create'),
             'edit' => Pages\EditSetting::route('/{record}/edit'),
         ];
     }
@@ -92,14 +123,4 @@ class SettingResource extends Resource
         return Setting::count() < 1;
     }
 
-    public static function query(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
-    {
-        $user = filament()->auth()->user();
-
-        if ($user->role === 'owner') {
-            return $query->where('store_id', $user->store_id);
-        }
-
-        return $query;
-    }
 }

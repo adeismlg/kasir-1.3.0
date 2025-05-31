@@ -20,6 +20,20 @@ class Store extends Model
         'address',
     ];
 
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::created(function ($store) {
+            Setting::create([
+                'shop' => $store->name,
+                'address' => $store->address ?? 'Belum diatur',
+                'phone' => 'Belum diatur',
+                'store_id' => $store->id,
+            ]);
+        });
+    }
+
     /**
      * Relasi: Store memiliki banyak produk
      */
@@ -56,4 +70,5 @@ class Store extends Model
     {
         return $this->hasOne(Setting::class);
     }
+    
 }
