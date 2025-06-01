@@ -17,11 +17,17 @@ class Category extends Model
         'image',
         'is_active',
         'description',
+        'store_id', // Hubungkan kategori dengan toko
     ];
 
     public function products(): HasMany
     {
         return $this->hasMany(Product::class);
+    }
+
+    public function store()
+    {
+        return $this->belongsTo(Store::class);
     }
 
     public static function generateUniqueSlug(string $name): string

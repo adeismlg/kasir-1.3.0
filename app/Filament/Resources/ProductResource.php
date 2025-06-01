@@ -14,6 +14,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Filament\Forms\Set;
 use App\Filament\Clusters\Products;
+use Illuminate\Support\Facades\Auth;
+use Filament\Forms\Components\TextInput;
+use Filament\Support\RawJs;
 
 class ProductResource extends Resource
 {
@@ -25,12 +28,18 @@ class ProductResource extends Resource
 
     protected static ?int $navigationSort = 1;
 
-    public static function query(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
-        $user = filament()->auth()->user();
+        $query = parent::getEloquentQuery();
+        $user = Auth::user();
 
-        if ($user && $user->role === 'owner') {
-            return $query->where('store_id', $user->store_id);
+        if (!$user) {
+            return $query->whereNull('id'); // Jika tidak ada user, jangan tampilkan data
+        }
+
+        if ($user->role === 'owner') {
+            // Pastikan $user->store_id sudah terisi dan sesuai dengan tipe yang di tabel Payment Methods
+            return $query->where('store_id', '=', $user->store_id);
         }
 
         return $query;
@@ -48,7 +57,9 @@ class ProductResource extends Resource
                     ->required()
                     ->maxLength(255),
                 Forms\Components\Select::make('category_id')
-                    ->relationship('category', 'name'),
+                    ->relationship('category', 'name', function (Builder $query) {
+                        return $query->where('store_id', Auth::user()->store_id);
+                    }),
                 Forms\Components\TextInput::make('slug')
                     ->required()
                     ->readOnly()
@@ -58,9 +69,10 @@ class ProductResource extends Resource
                     ->numeric()
                     ->default(1),
                 Forms\Components\TextInput::make('price')
-                    ->required()
+                    ->mask(RawJs::make('$money($input)'))
+                    ->stripCharacters(',')
                     ->numeric()
-                    ->prefix('Rp.'),
+                    ->prefix('Rp '),
                 Forms\Components\Toggle::make('is_active')
                     ->required(),
                 Forms\Components\FileUpload::make('image')
@@ -69,6 +81,9 @@ class ProductResource extends Resource
                     ->maxLength(255),
                 Forms\Components\Textarea::make('description')
                     ->columnSpanFull(),
+                Forms\Components\Hidden::make('store_id') // Store ID otomatis sesuai toko owner
+                ->default(fn () => \Illuminate\Support\Facades\Auth::user()?->store_id)
+                ->required(),
             ]);
     }
 

@@ -14,6 +14,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Clusters\Products;
+use Illuminate\Support\Facades\Auth;
 
 class CategoryResource extends Resource
 {
@@ -23,12 +24,18 @@ class CategoryResource extends Resource
 
     protected static ?string $cluster = Products::class;
 
-    public static function query(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+public static function getEloquentQuery(): Builder
     {
-        $user = filament()->auth()->user();
+        $query = parent::getEloquentQuery();
+        $user = Auth::user();
 
-        if ($user && $user->role === 'owner') {
-            return $query->where('store_id', $user->store_id);
+        if (!$user) {
+            return $query->whereNull('id'); // Jika tidak ada user, jangan tampilkan data
+        }
+
+        if ($user->role === 'owner') {
+            // Pastikan $user->store_id sudah terisi dan sesuai dengan tipe yang di tabel Payment Methods
+            return $query->where('store_id', '=', $user->store_id);
         }
 
         return $query;
@@ -53,6 +60,9 @@ class CategoryResource extends Resource
                     ->columnSpanFull(),
                 Forms\Components\Toggle::make('is_active')
                     ->required(),
+                Forms\Components\Hidden::make('store_id') // Store ID otomatis sesuai toko owner
+                ->default(fn () => \Illuminate\Support\Facades\Auth::user()?->store_id)
+                ->required(),
             ]);
     }
 

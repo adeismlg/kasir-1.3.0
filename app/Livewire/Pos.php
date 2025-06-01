@@ -17,6 +17,8 @@ use Filament\Forms\Form;
 use Filament\Forms;
 use Filament\Forms\Set;
 
+use Illuminate\Support\Facades\Auth;
+
 
 class Pos extends Component implements HasForms
 {
@@ -37,8 +39,11 @@ class Pos extends Component implements HasForms
 
     public function render()
     {
+        $storeId = Auth::user()->store_id;
         return view('livewire.pos', [
             'products' => Product::where('stock', '>', 0)
+                            ->where('store_id', $storeId)
+                            ->where('is_active', true)
                             ->search($this->search)
                             ->paginate(12)
         ]);
@@ -67,7 +72,10 @@ class Pos extends Component implements HasForms
                             Forms\Components\Select::make('payment_method_id') 
                                 ->required()
                                 ->label('Payment Method')
-                                ->options($this->payment_methods->pluck('name', 'id'))
+                                ->options($this->payment_methods->pluck('name', 'id')),
+                            Forms\Components\Hidden::make('store_id') // Store ID otomatis sesuai toko owner
+                                ->default(fn () => \Illuminate\Support\Facades\Auth::user()?->store_id)
+                                ->required(),
                         ])
                 ]);
     }
@@ -77,7 +85,9 @@ class Pos extends Component implements HasForms
         if (session()->has('orderItems')) {
             $this->order_items = session('orderItems');
         }
-        $this->payment_methods = PaymentMethod::all();
+
+        $storeId = Auth::user()->store_id;
+        $this->payment_methods = PaymentMethod::where('store_id', $storeId)->get();
         $this->form->fill(['payment_methods', $this->payment_methods]);
     }
 
@@ -194,7 +204,11 @@ class Pos extends Component implements HasForms
 
         $payment_method_id_temp = $this->payment_method_id;
 
+        // Ambil store_id dari user yang sedang login
+        $storeId = \Illuminate\Support\Facades\Auth::user()->store_id;
+
         $order = Order::create([
+            'store_id' => $storeId,
             'name' => $this->name_customer,
             'gender' => $this->gender,
             'total_price' => $this->calculateTotal(),
@@ -223,7 +237,7 @@ class Pos extends Component implements HasForms
         if ($product) {
             $this->addToOrder($product->id);
         } else {
-            Notifiction::make()
+            Notification::make()
                 ->title('Product not found '.$decodeText)
                 ->danger()
                 ->send();

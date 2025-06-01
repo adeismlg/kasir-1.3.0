@@ -3,10 +3,10 @@
 namespace App\Filament\Widgets;
 
 use Filament\Widgets\ChartWidget;
-use Flowframe\Trend\Trend;
-use Flowframe\Trend\TrendValue;
 use App\Models\Expense;
 use Carbon\Carbon;
+use Carbon\CarbonPeriod;
+use Filament\Facades\Filament;
 
 class ExpenseChart extends ChartWidget
 {
@@ -15,69 +15,103 @@ class ExpenseChart extends ChartWidget
     protected static string $color = 'danger';
     public ?string $filter = 'today';
 
-protected function getData(): array
+    protected function getData(): array
     {
+        // Ambil user yang sedang login dan cek apakah user adalah admin.
+        $user    = Filament::auth()->user();
+        $isAdmin = $user && $user->role === 'admin';
+        $storeId = $user->store_id ?? null;
+
         $activeFilter = $this->filter;
 
+        // Tentukan rentang waktu dan metode pengelompokan data
         $dateRange = match ($activeFilter) {
             'today' => [
-                'start' => now()->startOfDay(),
-                'end' => now()->endOfDay(),
-                'period' => 'perHour'
+                'start'  => now()->startOfDay(),
+                'end'    => now()->endOfDay(),
+                'period' => 'perHour',
             ],
             'week' => [
-                'start' => now()->startOfWeek(),
-                'end' => now()->endOfWeek(),
-                'period' => 'perDay'
+                'start'  => now()->startOfWeek(),
+                'end'    => now()->endOfWeek(),
+                'period' => 'perDay',
             ],
             'month' => [
-                'start' => now()->startOfMonth(),
-                'end' => now()->endOfMonth(),
-                'period' => 'perDay'
+                'start'  => now()->startOfMonth(),
+                'end'    => now()->endOfMonth(),
+                'period' => 'perDay',
             ],
             'year' => [
-                'start' => now()->startOfYear(),
-                'end' => now()->endOfYear(),
-                'period' => 'perMonth'
-            ]
+                'start'  => now()->startOfYear(),
+                'end'    => now()->endOfYear(),
+                'period' => 'perMonth',
+            ],
         };
 
-
-        $query = Trend::model(Expense::class)
-            ->between(
-                start: $dateRange['start'],
-                end: $dateRange['end'],
-            );
-
-        if ($dateRange['period'] === 'perHour') {
-            $data = $query->perHour();
-        } elseif ($dateRange['period'] === 'perDay') {
-            $data = $query->perDay();
-        } else {
-            $data = $query->perMonth();
+        // Buat query dasar Expense dalam rentang waktu
+        $query = Expense::query()->whereBetween('created_at', [$dateRange['start'], $dateRange['end']]);
+        if (!$isAdmin && $storeId) {
+            $query->where('store_id', $storeId);
         }
 
-        $data = $data->sum('amount');
+        $data = collect();
+        $labels = collect();
 
-        $labels = $data->map(function (TrendValue $value) use ($dateRange) {
-            $date = Carbon::parse($value->date);
+        if ($dateRange['period'] === 'perHour') {
+            // Kelompokkan berdasarkan jam (0-23)
+            $results = $query->selectRaw('HOUR(created_at) as hour, SUM(amount) as aggregate')
+                ->groupBy('hour')
+                ->orderBy('hour')
+                ->get();
 
-            if ($dateRange['period'] === 'perHour') {
-                return $date->format('H:i');
-            } elseif ($dateRange['period'] === 'perDay') {
-                return $date->format('d M');
-            } 
-            return $date->format('M Y');
-        });
-    
+            // Buat data untuk setiap jam dalam 24 jam
+            for ($i = 0; $i < 24; $i++) {
+                $matching = $results->firstWhere('hour', $i);
+                $data->push($matching ? (float) $matching->aggregate : 0);
+                $labels->push(sprintf("%02d:00", $i));
+            }
+        } elseif ($dateRange['period'] === 'perDay') {
+            // Kelompokkan berdasarkan tanggal
+            $results = $query->selectRaw('DATE(created_at) as day, SUM(amount) as aggregate')
+                ->groupBy('day')
+                ->orderBy('day')
+                ->get();
+
+            // Buat interval tanggal antara start dan end
+            $period = CarbonPeriod::create($dateRange['start'], $dateRange['end']);
+            foreach ($period as $date) {
+                $day = $date->toDateString();
+                $matching = $results->firstWhere('day', $day);
+                $data->push($matching ? (float) $matching->aggregate : 0);
+                $labels->push($date->format('d M'));
+            }
+        } else { // perMonth
+            // Kelompokkan berdasarkan bulan (format "Y-m")
+            $results = $query->selectRaw('DATE_FORMAT(created_at, "%Y-%m") as month, SUM(amount) as aggregate')
+                ->groupBy('month')
+                ->orderBy('month')
+                ->get();
+
+            $start = Carbon::parse($dateRange['start'])->startOfMonth();
+            $end   = Carbon::parse($dateRange['end'])->startOfMonth();
+            $period = CarbonPeriod::create($start, '1 month', $end);
+            foreach ($period as $date) {
+                $month = $date->format('Y-m');
+                $matching = $results->firstWhere('month', $month);
+                $data->push($matching ? (float) $matching->aggregate : 0);
+                $labels->push($date->format('M Y'));
+            }
+        }
+
         return [
             'datasets' => [
                 [
-                    'label' => 'Expense '.$this->getFilters()[$activeFilter],
-                    'data' => $data->map(fn (TrendValue $value) => $value->aggregate),
+                    'label'           => 'Expense ' . $this->getFilters()[$activeFilter],
+                    'data'            => $data->toArray(),
+                    'backgroundColor' => static::$color,
                 ],
             ],
-            'labels' => $labels,
+            'labels' => $labels->toArray(),
         ];
     }
 
@@ -85,9 +119,9 @@ protected function getData(): array
     {
         return [
             'today' => 'Today',
-            'week' => 'Last week',
+            'week'  => 'Last week',
             'month' => 'Last month',
-            'year' => 'This year',
+            'year'  => 'This year',
         ];
     }
 

@@ -22,6 +22,7 @@ class Product extends Model
         'image',
         'barcode',
         'description',
+        'store_id', // Hubungkan produk dengan toko
     ];
 
     protected $appends = ['image_url'];

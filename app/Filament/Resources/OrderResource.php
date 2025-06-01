@@ -17,6 +17,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Filament\Forms\Components\Repeater;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Facades\Auth;
+use Filament\Forms\Components\TextInput;
+use Filament\Support\RawJs;
 
 class OrderResource extends Resource
 {
@@ -26,12 +29,18 @@ class OrderResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
-    public static function query(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
-        $user = filament()->auth()->user();
+        $query = parent::getEloquentQuery();
+        $user = Auth::user();
 
-        if ($user && $user->role === 'owner') {
-            return $query->where('store_id', $user->store_id);
+        if (!$user) {
+            return $query->whereNull('id'); // Jika tidak ada user, jangan tampilkan data
+        }
+
+        if ($user->role === 'owner') {
+            // Pastikan $user->store_id sudah terisi dan sesuai dengan tipe yang di tabel Payment Methods
+            return $query->where('store_id', '=', $user->store_id);
         }
 
         return $query;
@@ -53,6 +62,9 @@ class OrderResource extends Resource
                                         'male' => 'Laki-laki',
                                         'female' => 'Perempuan'
                                     ])
+                                    ->required(),
+                                Forms\Components\Hidden::make('store_id') // Store ID otomatis sesuai toko owner
+                                    ->default(fn () => \Illuminate\Support\Facades\Auth::user()?->store_id)
                                     ->required(),
                             ])
                 ]),
@@ -80,6 +92,7 @@ class OrderResource extends Resource
                             ->schema([
                                 Forms\Components\TextInput::make('total_price')
                                     ->required()
+                                    ->prefix('Rp ')
                                     ->readOnly()
                                     ->numeric(),
                                 Forms\Components\Textarea::make('note')
@@ -91,7 +104,11 @@ class OrderResource extends Resource
                         Forms\Components\Section::make('Pembayaran')
                             ->schema([
                                 Forms\Components\Select::make('payment_method_id')
-                                    ->relationship('paymentMethod', 'name')
+                                    ->relationship('paymentMethod', 'name', function (Builder $query) {
+                                        $user = Auth::user();
+                                        // Pastikan hanya payment method dengan store_id user yang muncul
+                                        return $query->where('store_id', $user->store_id);
+                                    })
                                     ->reactive()
                                     ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
                                         $paymentMethod = PaymentMethod::find($state);
@@ -101,9 +118,6 @@ class OrderResource extends Resource
                                             $set('change_amount', 0);
                                             $set('paid_amount', $get('total_price'));
                                         }
-
-                                        
-
                                     })
                                     ->afterStateHydrated(function (Forms\Set $set, Forms\Get $get, $state) {
                                         $paymentMethod = PaymentMethod::find($state);
@@ -119,6 +133,7 @@ class OrderResource extends Resource
                                     ->dehydrated(),
                                 Forms\Components\TextInput::make('paid_amount')
                                     ->numeric()
+                                    ->prefix('Rp ')
                                     ->reactive()
                                     ->label('Nominal Bayar')
                                     ->readOnly(fn (Forms\Get $get) => $get('is_cash') == false)
@@ -129,6 +144,7 @@ class OrderResource extends Resource
                                     }),
                                 Forms\Components\TextInput::make('change_amount')
                                     ->numeric()
+                                    ->prefix('Rp ')
                                     ->label('Kembalian')
                                     ->readOnly(),
                             ])
@@ -213,9 +229,20 @@ class OrderResource extends Resource
                 Forms\Components\Select::make('product_id')
                     ->label('Produk')
                     ->required()
-                    ->options(Product::query()->where('stock', '>', 1)->pluck('name', 'id'))
+                    // Menggunakan closure untuk opsi, sehingga query akan dieksekusi pada runtime
+                    ->options(function () {
+                        $user = Auth::user();
+                        if (!$user || !$user->store_id) {
+                            return [];
+                        }
+                        return Product::query()
+                            ->where('stock', '>', 1)
+                            ->where('store_id', $user->store_id)
+                            ->pluck('name', 'id')
+                            ->toArray();
+                    })
                     ->columnSpan([
-                        'md' => 5
+                        'md' => 5,
                     ])
                     ->afterStateHydrated(function (Forms\Set $set, Forms\Get $get, $state) {
                         $product = Product::find($state);
@@ -226,29 +253,27 @@ class OrderResource extends Resource
                         $product = Product::find($state);
                         $set('unit_price', $product->price ?? 0);
                         $set('stock', $product->stock ?? 0);
-                        $quantity = $get('quantity') ?? 1;
-                        $stock = $get('stock');
                         self::updateTotalPrice($get, $set);
                     })
                     ->disableOptionsWhenSelectedInSiblingRepeaterItems(),
+                // Tambahkan komponen lain untuk order item jika diperlukan
                 Forms\Components\TextInput::make('quantity')
                     ->required()
                     ->numeric()
                     ->default(1)
                     ->minValue(1)
                     ->columnSpan([
-                        'md' => 1
+                        'md' => 1,
                     ])
                     ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
                         $stock = $get('stock');
                         if ($state > $stock) {
                             $set('quantity', $stock);
-                            Notification::make()
+                            \Filament\Notifications\Notification::make()
                                 ->title('Stok tidak mencukupi')
                                 ->warning()
                                 ->send();
                         }
-
                         self::updateTotalPrice($get, $set);
                     }),
                 Forms\Components\TextInput::make('stock')
@@ -256,19 +281,20 @@ class OrderResource extends Resource
                     ->numeric()
                     ->readOnly()
                     ->columnSpan([
-                        'md' => 1
+                        'md' => 1,
                     ]),
                 Forms\Components\TextInput::make('unit_price')
                     ->label('Harga saat ini')
                     ->required()
+                    ->prefix('Rp ')
                     ->numeric()
                     ->readOnly()
                     ->columnSpan([
-                        'md' => 3
+                        'md' => 3,
                     ]),
-                
             ]);
     }
+
 
     protected static function updateTotalPrice(Forms\Get $get, Forms\Set $set): void
     {
