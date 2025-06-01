@@ -20,7 +20,7 @@ class StoreResource extends Resource
 
     
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-building-storefront';
 
     public static function canAccess(): bool
     {

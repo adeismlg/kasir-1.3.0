@@ -24,9 +24,13 @@ class AdminPanelProvider extends PanelProvider
     {
         return $panel
             ->default()
+            ->brandName('UMKM CORNER')
+            // ->brandLogo(asset('images/umkm.png'))
+            ->favicon(asset('images/umkm.png'))
             ->id('admin')
             ->path('admin')
             ->login()
+            ->darkMode(false)
             ->colors([
                 'primary' => Color::Amber,
             ])

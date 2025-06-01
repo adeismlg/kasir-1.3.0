@@ -24,7 +24,7 @@ class ProductResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-m-building-storefront';
 
-    protected static ?string $cluster = Products::class;
+    // protected static ?string $cluster = Products::class;
 
     protected static ?int $navigationSort = 1;
 
