@@ -12,6 +12,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Auth;
 
 class ExpenseResource extends Resource
 {
@@ -21,12 +22,18 @@ class ExpenseResource extends Resource
 
     protected static ?int $navigationSort = 3;
 
-    public static function query(\Illuminate\Database\Eloquent\Builder $query): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
-        $user = filament()->auth()->user();
+        $query = parent::getEloquentQuery();
+        $user = Auth::user();
 
-        if ($user && $user->role === 'owner') {
-            return $query->where('store_id', $user->store_id);
+        if (!$user) {
+            return $query->whereNull('id'); // Jika tidak ada user, jangan tampilkan data
+        }
+
+        if ($user->role === 'owner') {
+            // Pastikan $user->store_id sudah terisi dan sesuai dengan tipe yang di tabel Payment Methods
+            return $query->where('store_id', '=', $user->store_id);
         }
 
         return $query;

@@ -15,7 +15,7 @@ class AuthController extends Controller
         $request->validate([
             /**
              * Email
-             * @example admin@dewakoding.com
+             * @example owner@example.com
              */
             'email' => 'required|email',
             /**
